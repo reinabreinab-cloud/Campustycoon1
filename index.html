@@ -490,7 +490,7 @@ body,#game{font-feature-settings:"tnum" 1,"ss01" 1}
 /* ---------- stage ---------- */
 #game .stage{background:linear-gradient(#7CC4EE 0%,#BFE3E6 40%,#FBE3B4 100%)}
 #game .stage::after{content:"";position:absolute;inset:0;pointer-events:none;z-index:1;
-  background:radial-gradient(120% 90% at 50% 45%,transparent 58%,rgba(8,28,26,.34) 100%),linear-gradient(180deg,rgba(255,255,255,.08),transparent 22%)}
+  background:radial-gradient(120% 90% at 50% 45%,transparent 58%,rgba(8,28,26,.34) 100%),radial-gradient(70% 55% at 88% 0%,rgba(255,226,160,.26),transparent 70%),linear-gradient(180deg,rgba(255,255,255,.08),transparent 22%)}
 #game canvas{filter:saturate(1.14) contrast(1.04) brightness(1.02)}
 
 /* camera tool rail */
@@ -982,7 +982,7 @@ function lpCrestTex() {                                   // the school crest: q
   g.save(); shield(7); g.clip(); g.fillStyle = LP.navy; g.fillRect(0, 0, 160, 200); g.fillStyle = LP.burg; g.fillRect(80, 0, 80, 112); g.fillRect(0, 112, 80, 90);
   g.fillStyle = LP.cream; g.fillRect(77, 0, 6, 200); g.fillRect(0, 109, 160, 6); g.restore();
   g.fillStyle = LP.gold; g.beginPath(); g.moveTo(52, 36); g.lineTo(52, 14); g.lineTo(66, 26); g.lineTo(80, 6); g.lineTo(94, 26); g.lineTo(108, 14); g.lineTo(108, 36); g.closePath(); g.fill();
-  _lpCrest = new THREE.CanvasTexture(c); _lpCrest.colorSpace = THREE.SRGBColorSpace; _lpCrest.anisotropy = 4; return _lpCrest;
+  _lpCrest = new THREE.CanvasTexture(c); _lpCrest.colorSpace = THREE.SRGBColorSpace; _lpCrest.anisotropy = 16; return _lpCrest;
 }
 function lodIndex(data, lab){   // vertex-cluster decimation: same vertex buffers, far fewer triangles
   if (data.__lod) return data.__lod;
@@ -1010,13 +1010,13 @@ class Avatar {
     g.setAttribute('color', this.colAttr);
     g.setIndex(new THREE.BufferAttribute(data.idx, 1)); this.idxFull = g.index; try { this.idxLod = lodIndex(data, this.lab); } catch (e) { this.idxLod = null; } this.lod = 0;
     g.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0.85, 0), 1.6);
-    this.mesh = new THREE.Mesh(g, new THREE.MeshStandardMaterial({
-      vertexColors: true, roughness: 0.82, metalness: 0,
+    this.mesh = new THREE.Mesh(g, new THREE.MeshPhysicalMaterial({
+      vertexColors: true, roughness: 0.68, metalness: 0, sheen: 0.18, sheenRoughness: 0.6, sheenColor: new THREE.Color(0xffd9c4), envMapIntensity: 0.8,
     }));
     this.mesh.frustumCulled = true;
     this.root = new THREE.Group();
     this.root.add(this.mesh);
-    const dm = (c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.85, metalness: 0, side: THREE.DoubleSide });
+    const dm = (c) => new THREE.MeshPhysicalMaterial({ color: c, roughness: 0.6, metalness: 0, sheen: 0.1, sheenRoughness: 0.6, sheenColor: new THREE.Color(0x888888), side: THREE.DoubleSide });
     this.mHair = dm(0x111111); this.mBottom = dm(0x1e88e5); this.mPack = dm(0xfdd835);
     this.acc = new THREE.Group(); this.root.add(this.acc); this.accKey = '';
     this.mWhite = dm(0xffffff); this.mButton = dm(0xffd54f);
@@ -1103,9 +1103,9 @@ class Avatar {
   addEyes() {
     const f = this.face, ray = new THREE.Raycaster(), V = THREE.Vector3;
     const sc0 = this.root.scale.clone(); this.root.scale.set(1, 1, 1); this.root.updateMatrixWorld(true);
-    this.irisMat = new THREE.MeshLambertMaterial({ color: 0x4a2b14 });
+    this.irisMat = new THREE.MeshPhysicalMaterial({ color: 0x4a2b14, roughness: 0.25, clearcoat: 1, clearcoatRoughness: 0.05 });
     this.ringMat = new THREE.MeshLambertMaterial({ color: 0x7a5a38, transparent: true, opacity: 0.6 });
-    const scl = new THREE.MeshLambertMaterial({ color: 0xf1ede6 });
+    const scl = new THREE.MeshStandardMaterial({ color: 0xf1ede6, roughness: 0.3 });
     const pup = new THREE.MeshBasicMaterial({ color: 0x050505 });
     const hi = new THREE.MeshBasicMaterial({ color: 0xffffff });
     const lash = new THREE.MeshBasicMaterial({ color: 0x140b08 });
@@ -1446,11 +1446,24 @@ function initCreator() {
 /* ---------- scene ---------- */
 const stage = document.getElementById('cstage');
 const canvas = document.getElementById('view');
+/* ---------- graphics: soft image-based lighting from a procedural sky, so every material picks up natural ambient light and highlights ---------- */
+function makeEnvironment(rend, scn, intensity){
+  try {
+    const pm = new THREE.PMREMGenerator(rend), es = new THREE.Scene();
+    es.add(new THREE.Mesh(new THREE.SphereGeometry(50, 48, 24), new THREE.ShaderMaterial({ side:THREE.BackSide, depthWrite:false,
+      vertexShader:'varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader:'varying vec3 vP; void main(){ float h = vP.y; vec3 sky = mix(vec3(0.80,0.88,0.96), vec3(0.34,0.56,0.90), smoothstep(0.0, 0.95, h)); vec3 gnd = mix(vec3(0.82,0.76,0.62), vec3(0.50,0.46,0.38), smoothstep(0.0, -0.9, h)); vec3 c = h > 0.0 ? sky : gnd; float sun = pow(max(dot(vP, normalize(vec3(0.45,0.75,0.5))), 0.0), 48.0); c += vec3(1.0,0.86,0.62) * sun * 2.2; gl_FragColor = vec4(c, 1.0); }' })));
+    const rt = pm.fromScene(es, 0.03); scn.environment = rt.texture; scn.environmentIntensity = intensity; pm.dispose();
+  } catch (e) { console.warn('environment lighting unavailable', e); }
+}
+window.makeEnvironment = makeEnvironment;
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.toneMapping = THREE.NeutralToneMapping; renderer.toneMappingExposure = 1.0;
 const scene = new THREE.Scene();
+makeEnvironment(renderer, scene, 0.55);
 const camera = new THREE.PerspectiveCamera(26, 1, 0.1, 50);
-scene.add(new THREE.HemisphereLight(0xffffff, 0x8fb8ac, 2.0));
+scene.add(new THREE.HemisphereLight(0xffffff, 0x8fb8ac, 1.5));
 scene.add(camera);
 const fill = new THREE.DirectionalLight(0xfff2e8, 1.1);   // soft front fill that travels with the camera
 fill.position.set(0.3, 0.4, 0); camera.add(fill); fill.target.position.set(0, 0, -1); camera.add(fill.target);
@@ -1717,26 +1730,27 @@ const PLOTS = [
    ====================================================================== */
 const cv = document.getElementById('map'), stage = document.getElementById('stage');
 const LOWMEM = (navigator.deviceMemory && navigator.deviceMemory <= 4) || /Android|iPhone|iPad/i.test(navigator.userAgent);
-const renderer = new THREE.WebGLRenderer({ canvas:cv, antialias:!LOWMEM, alpha:true, powerPreference:'high-performance' });
-const DPR_MAX = Math.min(window.devicePixelRatio || 1, LOWMEM ? 1.25 : 1.5); renderer.setPixelRatio(LOWMEM ? 1 : DPR_MAX);   // phones start at 1x and the governor raises it if the frame rate allows
+const renderer = new THREE.WebGLRenderer({ canvas:cv, antialias:true, alpha:true, powerPreference:'high-performance' });
+const DPR_MAX = Math.min(window.devicePixelRatio || 1, 2); renderer.setPixelRatio(DPR_MAX);   // full sharpness on every device; the frame-rate governor still steps down only if the game gets slow   // phones start at 1x and the governor raises it if the frame rate allows
 renderer.outputColorSpace = THREE.SRGBColorSpace;
-renderer.toneMapping = THREE.NoToneMapping;
+renderer.toneMapping = THREE.NeutralToneMapping; renderer.toneMappingExposure = 1.0;
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFShadowMap; renderer.shadowMap.autoUpdate = false; renderer.shadowMap.needsUpdate = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap; renderer.shadowMap.autoUpdate = false; renderer.shadowMap.needsUpdate = true;
 
 const scene = new THREE.Scene();
 scene.fog = new THREE.Fog('#F4E9CF', 120, 260);
+makeEnvironment(renderer, scene, 0.5);
 const FOV = 32;
 const camera = new THREE.PerspectiveCamera(FOV, 1, 0.5, 400);
 
-const hemi = new THREE.HemisphereLight('#FFF8E6', '#B9B08F', 1.4);
+const hemi = new THREE.HemisphereLight('#FFF8E6', '#B9B08F', 1.0);
 scene.add(hemi);
 const sun = new THREE.DirectionalLight('#FFEBC8', 2.35);
 sun.castShadow = true;
-sun.shadow.mapSize.set(LOWMEM ? 1024 : 2048, LOWMEM ? 1024 : 2048);
+{ const ss = Math.min(4096, renderer.capabilities.maxTextureSize || 2048); sun.shadow.mapSize.set(ss, ss); }
 Object.assign(sun.shadow.camera, { left:-42, right:42, top:42, bottom:-42, near:1, far:130 });
 sun.shadow.camera.updateProjectionMatrix();
-sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.03;
+sun.shadow.bias = -0.0003; sun.shadow.normalBias = 0.02; sun.shadow.radius = 3;
 scene.add(sun, sun.target);
 const SUN_CENTER = new THREE.Vector3(18, 0, 17);
 sun.target.position.copy(SUN_CENTER);
@@ -1800,7 +1814,7 @@ const FONT = "'Fredoka','Trebuchet MS',system-ui,sans-serif";
 function canvasTex(w, h, draw){
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   draw(c.getContext('2d'), w, h);
-  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t;
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 16; return t;
 }
 function signTex(text, w, h, bg, fg, px){
   return canvasTex(w, h, (g) => {
@@ -3226,9 +3240,9 @@ function resize(){
 new ResizeObserver(resize).observe(stage); resize();
 
 const qb = document.getElementById('qual');
-const PERF = { mode:'auto', n:0, acc:0, f:0, dpr:LOWMEM ? 1 : DPR_MAX, cap:DPR_MAX, shEvery:2, fps:60, raised:false,
+const PERF = { mode:'auto', n:0, acc:0, f:0, dpr:DPR_MAX, cap:DPR_MAX, shEvery:1, fps:60, raised:false,
   set(d){ d = Math.round(d * 4) / 4; if (d === this.dpr) return; this.dpr = d; renderer.setPixelRatio(d); resize(); },
-  apply(){ if (this.mode === 'high') { this.set(DPR_MAX); this.shEvery = 1; } else if (this.mode === 'low') { this.set(0.75); this.shEvery = 4; } else { this.shEvery = 2; this.set(Math.min(this.dpr, this.cap)); } this.label(); },
+  apply(){ if (this.mode === 'high') { this.set(DPR_MAX); this.shEvery = 1; } else if (this.mode === 'low') { this.set(0.75); this.shEvery = 4; } else { this.shEvery = 1; this.set(Math.min(this.dpr, this.cap)); } this.label(); },
   label(){ qb.textContent = this.mode[0].toUpperCase() + Math.round(this.fps); },
   tick(dt){ this.n++; this.acc += dt; if (++this.f < 45) return; const avg = this.acc / this.f; this.fps = 1 / avg; this.acc = 0; this.f = 0;
     if (this.mode === 'auto') { if (avg > 0.026 && this.dpr > 0.75) { if (this.raised) this.cap = this.dpr; this.raised = false; this.set(this.dpr - 0.25); } else if (avg < 0.0175 && this.dpr < this.cap) { this.raised = true; this.set(this.dpr + 0.25); } else this.raised = false; }
@@ -3673,7 +3687,7 @@ const pLook = { ...DEFAULT, gender:'girl', name:'Ama' };
 /* the school opens empty: no teacher and no children until the owner hires and enrols them */
 let kidSeq = 0;
 function spawnKid(name){
-  const i = kidSeq++, A = new Actor(name, makeLook(name, i % 2 ? 'boy' : 'girl', i), false, '#2D7FEA');
+  const i = kidSeq++, A = new Actor(name, makeLook(name, genderOfName(name, i % 2 ? 'boy' : 'girl'), i), false, '#2D7FEA');
   A.kidIdx = i; A.nextThink = gameNow + 0.5; if (!adultStudent(name)) addLanyard(A); return A;
 }
 window.__applyPlayerLook = () => { applySchool(); const l = ownerLook(); O.name = l.name; O.el.textContent = '★ ' + l.name + ' · School Owner'; O.setAvatar(l); };
@@ -3784,6 +3798,31 @@ const shortOf = k => keyDate(k).toLocaleDateString('en-GB', { day:'numeric', mon
 const PARENT_TITLES = ['Mr.', 'Mrs.', 'Ms.', 'Mr.', 'Mrs.', 'Madam', 'Dr.', 'Nana'];
 const KID_POOL = ['Kwabena', 'Adwoa', 'Yaa', 'Fiifi', 'Araba', 'Kobby', 'Maame', 'Selorm', 'Dela', 'Akosua', 'Kwesi', 'Efe', 'Mawuli', 'Ewura', 'Nyame', 'Ato', 'Kwaku', 'Afia', 'Kwadwo', 'Akwasi', 'Ekow', 'Adjoa', 'Baaba', 'Ekua', 'Kakra', 'Kweku', 'Kwamena', 'Nhyira', 'Nyamekye', 'Awura', 'Adoma', 'Sika', 'Odai', 'Naa', 'Lamle', 'Ayeley', 'Aryee', 'Tei', 'Elikem', 'Kafui', 'Senam', 'Edem', 'Enyonam', 'Sedinam', 'Delali', 'Dzifa', 'Yayra', 'Etse', 'Kekeli', 'Eyram', 'Makafui', 'Fuseini', 'Rashida', 'Mariam', 'Hawa', 'Issah', 'Amina', 'Osei', 'Ohene', 'Esinam', 'Kojo', 'Nii', 'Ama']
 const SURNAMES = ['Mensah', 'Owusu', 'Boateng', 'Asante', 'Quaye', 'Appiah', 'Darko', 'Ofori', 'Tetteh', 'Addo', 'Amoah', 'Agyeman', 'Ansah', 'Osei', 'Opoku', 'Acheampong', 'Adjei', 'Amponsah', 'Antwi', 'Armah', 'Badu', 'Bonsu', 'Dankwa', 'Frimpong', 'Gyasi', 'Lamptey', 'Nyarko', 'Ocloo', 'Sarpong', 'Yeboah', 'Amankwah', 'Kumi', 'Larbi', 'Danquah', 'Ankrah', 'Agbeko', 'Kpodo', 'Tagoe', 'Odoom', 'Wiredu', 'Abdulai', 'Sackey', 'Aidoo', 'Baidoo', 'Eshun', 'Quartey', 'Nortey', 'Klu']
+/* ---------- realistic names: common first names Ghanaian families use in school + Ghanaian surnames; never repeated ---------- */
+const FIRST_B = ['Michael','Emmanuel','Daniel','Samuel','David','Joseph','Isaac','Benjamin','Joshua','Nathaniel','Prince','Richard','Eric','Kelvin','Raymond','Felix','Francis','Gideon','Jonathan','Kingsley','Patrick','Philip','Stephen','Thomas','Vincent','William','Bernard','Clifford','Dennis','Edwin','Frederick','George','Henry','Ibrahim','James','Justice','Kevin','Lawrence','Mark','Nelson','Paul','Reuben','Solomon','Theophilus','Victor','Albert','Caleb','Elijah','Ernest','Godfred','Jacob','Mohammed','Abdul','Andrew','Anthony','Bright','Charles','Collins','Derrick','Douglas','Isaiah','Jeremiah','Matthew','Nicholas','Peter','Ryan','Sylvester','Timothy','Wisdom'];
+const FIRST_G = ['Grace','Gloria','Elizabeth','Mary','Esther','Ruth','Sarah','Rebecca','Priscilla','Josephine','Patience','Comfort','Mercy','Joyce','Linda','Vivian','Abigail','Deborah','Evelyn','Felicia','Beatrice','Cynthia','Diana','Eunice','Florence','Georgina','Hannah','Irene','Jennifer','Juliet','Lydia','Margaret','Naomi','Pearl','Portia','Regina','Rita','Sandra','Stella','Theresa','Victoria','Winifred','Yvonne','Agnes','Alice','Bridget','Catherine','Charlotte','Doris','Emelia','Fatima','Aisha','Jemima','Vida','Gifty','Angela','Cecilia','Dorothy','Edna','Faustina','Harriet','Jessica','Lilian','Monica','Nancy','Phyllis','Rosemary','Sophia','Veronica'];
+const NAME_USED = new Set();
+const genderOfName = (n, fb) => { const f = String(n).split(' ')[0]; return FIRST_B.includes(f) ? 'boy' : FIRST_G.includes(f) ? 'girl' : fb; };
+function namesInUse(){
+  const u = new Set(NAME_USED);
+  try { OWN.kids.forEach(n => u.add(n)); Object.keys(OWN.pupils || {}).forEach(n => u.add(n)); OWN.applicants.forEach(a => u.add(a.child)); OWN.staff.forEach(t => u.add(t.short)); OWN.candidates.forEach(c => u.add(c.short));
+    if (OWN.social) { OWN.social.members.forEach(m => u.add(m.short)); OWN.social.cands.forEach(c => u.add(c.short)); } } catch (e) {}
+  return u;
+}
+function freshName(g, sur){
+  const pool = g === 'boy' ? FIRST_B : FIRST_G, used = namesInUse();
+  for (let t = 0; t < 500; t++){ const n = pickOne(pool) + ' ' + (sur || pickOne(SURNAMES)); if (!used.has(n)){ NAME_USED.add(n); return n; } }
+  for (let t = 0; t < 500; t++){ const n = pickOne(pool) + ' ' + String.fromCharCode(65 + Math.floor(Math.random() * 26)) + '. ' + (sur || pickOne(SURNAMES)); if (!used.has(n)){ NAME_USED.add(n); return n; } }
+  return pickOne(pool) + ' ' + (sur || pickOne(SURNAMES)) + ' ' + (used.size + 1);
+}
+const PARENT_USED = new Set();
+function parentName(sur){
+  for (let t = 0; t < 300; t++){
+    const ti = pickOne(PARENT_TITLES), fem = /^(Mrs|Ms|Madam)/.test(ti), first = pickOne(ti === 'Nana' || ti === 'Dr.' ? (Math.random() < 0.5 ? FIRST_B : FIRST_G) : fem ? FIRST_G : FIRST_B), n = ti + ' ' + first + ' ' + sur;
+    if (!PARENT_USED.has(n)){ PARENT_USED.add(n); return n; }
+  }
+  return pickOne(PARENT_TITLES) + ' ' + sur;
+}
 const NOTES = ['Loves painting', 'Needs a nut-free snack', 'Shy at first, loves story time', 'Wants full days', 'Already potty trained', 'Sibling of a current pupil', 'Speaks two languages', 'Very energetic!'];
 const TEACHER_POOL = [['Efua', 'girl'], ['Kwesi', 'boy'], ['Naana', 'girl'], ['Yaw', 'boy'], ['Akosua', 'girl'], ['Selasi', 'boy'], ['Maame', 'girl'], ['Mawuli', 'boy'], ['Ewurama', 'girl'], ['Kwame', 'boy'], ['Adwoa', 'girl'], ['Kofi', 'boy'], ['Araba', 'girl'], ['Nana', 'girl'], ['Esi', 'girl'], ['Kojo', 'boy'], ['Abena', 'girl'], ['Kwabena', 'boy'], ['Afia', 'girl'], ['Yaa', 'girl'], ['Kweku', 'boy'], ['Ama', 'girl'], ['Fiifi', 'boy'], ['Serwaa', 'girl'], ['Nii', 'boy'], ['Dede', 'girl'], ['Ekow', 'boy'], ['Akua', 'girl'], ['Efia', 'girl'], ['Kobby', 'boy'], ['Baaba', 'girl'], ['Kwaku', 'boy'], ['Adjoa', 'girl'], ['Selorm', 'boy'], ['Esinam', 'girl']];
 const BIOS = ['Ten years in early years, calm with big groups.', 'Fresh graduate, great with songs and crafts.', 'Former nursery head, strong on routines.', 'Loves outdoor play and storytelling.', 'Montessori trained, patient and organised.'];
@@ -3917,9 +3956,8 @@ function socReach(){
   return 1.4 * r * rep * Math.sqrt(boost);
 }
 function genSocCand(role){
-  const R = SOC_ROLES[role], used = OWN.staff.map(s => s.short).concat(OWN.candidates.map(c => c.short), OWN.social.members.map(m => m.short), OWN.social.cands.map(c => c.short));
-  const pool = SOC_POOL.filter(p => !used.includes(p[0])); if (!pool.length) return null;
-  const [nm, g] = pickOne(pool), skill = 2 + Math.floor(Math.random() * 4), ask = Math.round((R.pay(skill) + rnd(-40, 40)) / 5) * 5;
+  const R = SOC_ROLES[role], pool = SOC_POOL;
+  const [nm0, g] = pickOne(pool), nm = freshName(g), skill = 2 + Math.floor(Math.random() * 4), ask = Math.round((R.pay(skill) + rnd(-40, 40)) / 5) * 5;
   return { id:'s' + OWN.nextId++, role, name:nm, short:nm, gender:g, skill, ask, plat:pickOne(PLAT_IDS), bio:pickOne(R.bios) };
 }
 function socRefresh(){
@@ -4004,25 +4042,24 @@ function sibPick(){      // sometimes a new applicant is the brother or sister o
 function genApplicant(low, w = 'pre'){
   OWN.cash += APP_FEE; OWN.extraRev += APP_FEE; logTx('Application & Assessment Fee (Tasa de Solicitud): new applicant (non-refundable)', APP_FEE);
   const used = OWN.kids.concat(OWN.applicants.map(a => a.child));
-  const child = pickOne(KID_POOL.filter(n => !used.includes(n)).concat(['Nana']));
-  const SB = sibPick(), TIER = SB && SB.tier ? SB.tier : low ? 'sacrifice' : pickTier(window.__socBias);
-  return { id:OWN.nextId++, tier:TIER, child, sibOf:SB ? SB.kid : null, age:WINGS[w].ages[0] + Math.floor(Math.random() * (WINGS[w].ages[1] - WINGS[w].ages[0] + 1)), wing:w, parent:SB ? SB.parent : pickOne(PARENT_TITLES) + ' ' + pickOne(SURNAMES), pers:SB ? SB.pers : pickOne(PERS_IDS), note:SB ? 'Younger sibling of ' + SB.kid + '. We hope the Sibling Discount (Descuento por Hermanos) applies.' : pickOne(NOTES),
+  const SB = sibPick(), sur = SB ? String(SB.parent).split(' ').pop() : pickOne(SURNAMES), child = freshName(Math.random() < 0.5 ? 'boy' : 'girl', sur);
+  const TIER = SB && SB.tier ? SB.tier : low ? 'sacrifice' : pickTier(window.__socBias);
+  return { id:OWN.nextId++, tier:TIER, child, sibOf:SB ? SB.kid : null, age:WINGS[w].ages[0] + Math.floor(Math.random() * (WINGS[w].ages[1] - WINGS[w].ages[0] + 1)), wing:w, parent:SB ? SB.parent : parentName(sur), pers:SB ? SB.pers : pickOne(PERS_IDS), note:SB ? 'Younger sibling of ' + SB.kid + '. We hope the Sibling Discount (Descuento por Hermanos) applies.' : pickOne(NOTES),
     maxFee:Math.round((low ? 240 : tierFee(TIER)) * WINGS[w].mult / 5) * 5, wait:4 + Math.floor(Math.random() * 3) };
 }
-/* teacher candidates: one for every empty classroom seat (grades x Aura/Vibe/Glow-Up) in every open wing, at least 5, up to 16 */
+/* teacher candidates: one for every empty classroom seat (grades x Aura/Vibe/Glow-Up) in every open wing, plus a few spare, at least 8, up to 30 */
 function topUpTeachers(){
   try {
     let slots = 0; for (const w of openWings()) slots += Math.max(0, WINGS[w].maxT - teachersIn(w).length);
-    const want = Math.max(5, Math.min(16, slots)); let g = 0;
-    while (OWN.candidates.filter(c => c.type === 'teacher').length < want && g++ < 16){ const c = genCandidate('teacher'); if (!c) break; OWN.candidates.push(c); }
+    const want = Math.max(8, Math.min(30, slots + 4)); let g = 0;
+    while (OWN.candidates.filter(c => c.type === 'teacher').length < want && g++ < 30){ const c = genCandidate('teacher'); if (!c) break; OWN.candidates.push(c); }
   } catch (e) {}
 }
 setInterval(() => { if (window.__mapOn) topUpTeachers(); }, 3000);
 function genCandidate(type){
   const rc = type === 'reception';
-  const used = OWN.staff.map(s => s.short).concat(OWN.candidates.map(c => c.short));
-  const pool = (rc ? REC_POOL : TEACHER_POOL).filter(t => !used.includes(t[0])); if (!pool.length) return null;
-  const [nm, g] = pickOne(pool), traits = rc ? [] : pickTraits(), skill = Math.min(2 + Math.floor(Math.random() * 4), traits.includes('rookie') ? 3 : 5), ask = Math.round((expectedPay(skill, { type, traits }) + rnd(-60, 60)) / 5) * 5;
+  const pool = rc ? REC_POOL : TEACHER_POOL;
+  const [nm0, g] = pickOne(pool), nm = freshName(g), traits = rc ? [] : pickTraits(), skill = Math.min(2 + Math.floor(Math.random() * 4), traits.includes('rookie') ? 3 : 5), ask = Math.round((expectedPay(skill, { type, traits }) + rnd(-60, 60)) / 5) * 5;
   const pre = rc ? 'Nanny ' : 'Teacher ';
   const look = { ...DEFAULT, name:pre + nm, gender:g, outfit:'Long', skin:pickOne(PALETTES.skin.slice(2, 7)), hair:pickOne(PALETTES.hair.slice(0, 3)), eye:'#2b1b10',
     top:pickOne(['#e53935', '#43a047', '#8e24aa', '#f9a825', '#1e88e5']), bottom:pickOne(['#546e7a', '#37474f', '#5d4037']), shoes:'#ffffff', hairStyle:'Bob' };
@@ -5068,8 +5105,8 @@ SUP.escort = { fac:'bus', title:'Bus Escort Teacher', role:'Bus Escort Teacher',
   pool:[['Afia', 'girl'], ['Kojo', 'boy'], ['Naana', 'girl'], ['Yaw', 'boy'], ['Maame', 'girl'], ['Kwabena', 'boy'], ['Efua', 'girl'], ['Nii', 'boy'], ['Adwoa', 'girl']],
   bios:['Teaching assistant who knows every family on the morning route.', 'Organised and friendly, keeps a tidy roster and a tidy cash bag.', 'Former class teacher who loves singing on the bus.', 'Careful with money and always counts twice.'], pay:s => 280 + s * 70 };
 function genSupportCandidate(type){
-  const D = SUP[type], used = OWN.staff.map(s => s.short).concat(OWN.candidates.map(c => c.short)), pool = D.pool.filter(t => !used.includes(t[0])); if (!pool.length) return null;
-  const [nm, g] = pickOne(pool), skill = 2 + Math.floor(Math.random() * 4), ask = Math.round((D.pay(skill) + rnd(-48, 48)) / 5) * 5;
+  const D = SUP[type], pool = D.pool;
+  const [nm0, g] = pickOne(pool), nm = freshName(g), skill = 2 + Math.floor(Math.random() * 4), ask = Math.round((D.pay(skill) + rnd(-48, 48)) / 5) * 5;
   const look = { ...DEFAULT, name:D.pre + nm, gender:g, outfit:'Long', skin:pickOne(PALETTES.skin.slice(2, 7)), hair:pickOne(PALETTES.hair.slice(0, 3)), eye:'#2b1b10',
     top:type === 'matron' ? '#8E5AA8' : type === 'cook' ? '#F6F3EA' : type === 'driver' ? '#F2C230' : type === 'guard' ? '#2F4F6F' : '#35B8A5', bottom:type === 'cook' || type === 'driver' ? '#37474F' : type === 'guard' ? '#1E2026' : '#F6F3EA', shoes:'#ffffff', hairStyle:'Bob' };
   return { id:'c' + OWN.nextId++, type, name:D.pre + nm, short:nm, skill, ask, look, traits:[], bio:pickOne(D.bios) };
@@ -5657,7 +5694,7 @@ const OD_SEATS = []; for (const row of [15.35, 15.95]) for (const x of [31.55, 3
 function odStart(e){
   const T = OD_TYPES[e.type], nv = Math.min(10, 3 + OWN.kids.length * 2), seats = pmShuffle(OD_SEATS.slice()).slice(0, nv);
   seats.forEach((s, i) => { const V = spawnVisitor((i % 2 ? 'Mr ' : 'Mrs ') + pickOne(SURNAMES)); V.desc = 'Visiting the Open Day in the Assembly Hall'; V.isVisitor = true; setPresent(V, true); visit(V, s, { sit:1, knee:1, armFwd:0.25 }, 1e9, V.desc, true); ODV.visitors.push(V); });
-  pmShuffle(OWN.kids.slice()).slice(0, 4).forEach((n, i) => { const A = new Actor(n, makeLook(n, i % 2 ? 'boy' : 'girl', 0), false, '#2D7FEA'); A.isParent = true; A.nextThink = Infinity; A.isVisitor = true; setPresent(A, true); visit(A, { x:34.1 + i * 0.9, z:13.75, yaw:0, region:'HALL', gy:FLOOR + 0.3 }, { armWave:0.6, armFwd:0.3 }, 1e9, 'Performing at the ' + T.n, true); ODV.kids.push(A); });
+  pmShuffle(OWN.kids.slice()).slice(0, 4).forEach((n, i) => { const A = new Actor(n, makeLook(n, genderOfName(n, i % 2 ? 'boy' : 'girl'), 0), false, '#2D7FEA'); A.isParent = true; A.nextThink = Infinity; A.isVisitor = true; setPresent(A, true); visit(A, { x:34.1 + i * 0.9, z:13.75, yaw:0, region:'HALL', gy:FLOOR + 0.3 }, { armWave:0.6, armFwd:0.3 }, 1e9, 'Performing at the ' + T.n, true); ODV.kids.push(A); });
   ODV.banner[e.type].visible = true; e.live = true;
   OWN.notes.push(T.n + ' has begun in the Assembly Hall: parents are arriving to see the pupils.'); toast(T.n + ' is under way in the Assembly Hall!');
 }
@@ -6164,10 +6201,37 @@ const PM = { list:[], queue:[], reqs:{}, unread:0, filter:'all', nextId:1, open:
 const PERS = { over:'Overprotective', exam:'Exam-Focused', chill:'Chill / Supportive', budget:'Budget-Conscious' };
 const WHEN = { morning:'Morning drop-off', after:'After school', enquiry:'Enquiry', card:'Snack card', billing:'Billing notice', pickup:'Gate & pick-up', health:'Health & allergies', social:'Moods & friends', homework:'Homework & progress', uniform:'Lost uniform', boarding:'Boarding check-in', group:'School Parents’ Group Chat' };
 const pmShuffle = a => a.slice().sort(() => Math.random() - 0.5);
-const pmFam = k => { OWN.fam = OWN.fam || {}; return OWN.fam[k] || (OWN.fam[k] = { name:pickOne(PARENT_TITLES) + ' ' + pickOne(SURNAMES), pers:pickOne(PERS_IDS), tier:pickTier() }); };
+const pmFam = k => { OWN.fam = OWN.fam || {}; return OWN.fam[k] || (OWN.fam[k] = { name:parentName(String(k).split(' ').pop()), pers:pickOne(PERS_IDS), tier:pickTier() }); };
 const pmTeacher = k => { assignPupils(); return staffById(pupilOf(k).tid); };
 const pmSat = d => { OWN.sat = clampN(OWN.sat + d, 0, 100); };
-function pmPush(m){ if (m.kid && !m.tier){ const _f = OWN.fam && OWN.fam[m.kid]; if (_f && _f.tier) m = { ...m, tier:_f.tier }; } PM.list.unshift({ id:PM.nextId++, read:false, date:shortOf(dateKey()), ...m }); { let g = 0, o = 0; PM.list = PM.list.filter(x => x.when === 'group' ? ++g <= 60 : ++o <= 80); } PM.unread++; }
+/* ---------- wording: children are "kids" only in the Preschool wing; after that they are students ---------- */
+function studentize(t){
+  return String(t).replace(/\b(Kids?|kids?|Children|children|Child|child)\b(?!-sized| care)/g, (m, w, off, str) => {
+    if (/\b(my|our)\s$/i.test(str.slice(Math.max(0, off - 5), off))) return m;     // a parent speaking about their own child
+    const plural = /s$|ren$/i.test(w), base = plural ? 'students' : 'student';
+    return w[0] === w[0].toUpperCase() ? base[0].toUpperCase() + base.slice(1) : base;
+  });
+}
+const studentMode = () => { try { return !!window.__mapOn && OWN.kids.some(n => wingOf(n) !== 'pre'); } catch (e) { return false; } };
+function fixStudentText(n){
+  if (n.nodeType === 3){ const t = n.nodeValue; if (t && /kid|child/i.test(t)){ const r = studentize(t); if (r !== t) n.nodeValue = r; } return; }
+  if (n.nodeType !== 1) return;
+  const tag = n.tagName; if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'TEXTAREA' || tag === 'INPUT' || tag === 'CANVAS') return;
+  if (n.id === 'pm-list') return;                                   // parent messages are worded per child when they are written
+  for (let c = n.firstChild; c; c = c.nextSibling) fixStudentText(c);
+}
+{
+  let was = false;
+  new MutationObserver(ms => {
+    const on = studentMode(); if (!on){ was = false; return; }
+    if (!was){ was = true; fixStudentText(document.body); return; }
+    for (const m of ms){
+      if (m.type === 'characterData'){ if (!(m.target.parentNode && m.target.parentNode.closest && m.target.parentNode.closest('#pm-list'))) fixStudentText(m.target); }
+      else m.addedNodes.forEach(fixStudentText);
+    }
+  }).observe(document.body, { childList:true, characterData:true, subtree:true });
+}
+function pmPush(m){ try { if (m.kid && m.text && wingOf(m.kid) !== 'pre') m = { ...m, text:studentize(m.text) }; } catch (e) {} if (m.kid && !m.tier){ const _f = OWN.fam && OWN.fam[m.kid]; if (_f && _f.tier) m = { ...m, tier:_f.tier }; } PM.list.unshift({ id:PM.nextId++, read:false, date:shortOf(dateKey()), ...m }); { let g = 0, o = 0; PM.list = PM.list.filter(x => x.when === 'group' ? ++g <= 60 : ++o <= 80); } PM.unread++; }
 function pmQueue(m, delay, fn){ PM.queue.push({ key:dateKey(), min:clockMin() + delay, m, fn }); }
 function pmNotify(n, what){ toast(n + ' new message' + (n > 1 ? 's' : '') + (what ? ' at ' + what : ' from parents')); playChime(); }
 function pmTick(){
@@ -7764,7 +7828,7 @@ function gradStart(g){
   seats.forEach((s, i) => { const V = spawnVisitor((i % 2 ? 'Mr ' : 'Mrs ') + pickOne(SURNAMES)); V.desc = 'Watching the Graduation & Promotion Ceremony'; V.isVisitor = true; setPresent(V, true); visit(V, s, { sit:1, knee:1, armFwd:0.25 }, 1e9, V.desc, true); GRV.visitors.push(V); });
   const pre = due.filter(n => wingOf(n) === 'pre').slice(0, 6), sx = 35.7 - (pre.length - 1) * 0.3;
   pre.forEach((n, i) => {
-    const real = actors.find(a => !a.adult && !a.isParent && a.name === n), A = new Actor(n, real ? real.look : makeLook(n, i % 2 ? 'boy' : 'girl', i), false, '#23406E');
+    const real = actors.find(a => !a.adult && !a.isParent && a.name === n), A = new Actor(n, real ? real.look : makeLook(n, genderOfName(n, i % 2 ? 'boy' : 'girl'), i), false, '#23406E');
     A.isParent = true; A.nextThink = Infinity; A.isVisitor = true; addGown(A); setPresent(A, true);
     visit(A, { x:sx + i * 0.6, z:13.75, yaw:0, region:'HALL', gy:FLOOR + 0.3 }, { armWave:0.5, armFwd:0.3 }, 1e9, 'Graduating in a mini cap and gown', true); GRV.kids.push(A);
   });
